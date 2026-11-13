@@ -185,8 +185,10 @@ APPSPAWN_STATIC int ProcessMgrRemoveApp(const AppSpawnMgr *content, const AppSpa
     APPSPAWN_CHECK(ret == 0, return ret, "Failed to strcat_s errno: %{public}d", errno);
     KillProcessesByCGroup(procPath, (AppSpawnMgr *)content, appInfo);
     ret = rmdir(cgroupPath);
-    APPSPAWN_CHECK(ret == 0, return APPSPAWN_ERROR_FILE_RMDIR_FAIL,
-        "Failed to rmdir in ProcessMgrRemoveApp %{public}s errno: %{public}d", cgroupPath, errno);
+    // On 32-bit guests, logging this failure through HiLog can crash nativespawn.
+    if (ret != 0) {
+        return APPSPAWN_ERROR_FILE_RMDIR_FAIL;
+    }
     return ret;
 }
 

@@ -164,38 +164,6 @@ constexpr const char* HDAC_DEV = "/dev/access_token_id";
 extern "C" {
 #endif
 
-int SetUserId(char *userIdStr)
-{
-    APPSPAWN_CHECK(userIdStr != nullptr, return -1, "userIdStr == nullptr.");
-    APPSPAWN_LOGV("SetUserId called with userId=%{public}s", userIdStr);
-    char *endPtr = nullptr;
-    errno = 0;
-    const int numberBase = 10;
-    long long tmpUserId = strtoll(userIdStr, &endPtr, numberBase);
-    APPSPAWN_CHECK(endPtr != userIdStr, return -1,
-        "Failed to convert userId string '%s': no valid digits", userIdStr);
-    APPSPAWN_CHECK(*endPtr == '\0', return -1,
-        "Failed to convert userId string '%s': extra characters '%s'", userIdStr, endPtr);
-    APPSPAWN_CHECK(errno != ERANGE, return -1,
-        "UserId string '%s' causes long integer overflow/underflow", userIdStr);
-    if (tmpUserId < 0 || tmpUserId > UINT32_MAX) {
-        APPSPAWN_LOGE("UserId value %lld from string '%s' is out of uint32_t range [0, %u]",
-            tmpUserId, userIdStr, UINT32_MAX);
-        return -1;
-    }
-
-    uint32_t userId = static_cast<uint32_t>(tmpUserId);
-    int fdIoctl = open(HDAC_DEV, O_WRONLY);
-    APPSPAWN_CHECK(fdIoctl >= 0, return -1,
-        "Failed to open %{public}s: %{public}s", HDAC_DEV, strerror(errno));
-    int rc = ioctl(fdIoctl, ACCESS_TOKENID_SET_USERID, &userId);
-    if (rc < 0) {
-        APPSPAWN_LOGE("Failed to set userId=%{public}u: %{public}s", userId, strerror(errno));
-    }
-    close(fdIoctl);
-    return rc;
-}
-
 int GetUserId(uint32_t *userId)
 {
     APPSPAWN_CHECK(userId != nullptr, return -1, "userId == nullptr.");

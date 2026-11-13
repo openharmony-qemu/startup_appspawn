@@ -76,10 +76,28 @@
 #define MIN_VALID_APP_GID 10000
 #define APP_SIGN_TYPE_DEFAULT "none"
 
-int __attribute__((weak)) SetUserId(char *userIdStr)
+int SetUserId(char *userIdStr)
 {
-    APPSPAWN_LOGV("SetUserId called (weak implementation)");
-    return 0;
+    /* Account isolation is required with normal AND custom sandboxes. */
+    APPSPAWN_CHECK(userIdStr != NULL, return -1, "userIdStr == NULL");
+    char *endPtr = NULL;
+    errno = 0;
+    long long value = strtoll(userIdStr, &endPtr, 10);
+    APPSPAWN_CHECK(endPtr != userIdStr && *endPtr == '\0' && errno != ERANGE,
+        return -1, "Invalid userId string %{public}s", userIdStr);
+    APPSPAWN_CHECK(value >= 0 && value <= UINT32_MAX,
+        return -1, "UserId out of uint32_t range: %{public}s", userIdStr);
+    uint32_t userId = (uint32_t)value;
+    int fd = open("/dev/access_token_id", O_WRONLY | O_CLOEXEC);
+    APPSPAWN_CHECK(fd >= 0, return -1, "Cannot open access_token_id: %{public}s", strerror(errno));
+    int ret = ioctl(fd, _IOW('A', 12, uint32_t), &userId);
+    int savedErrno = errno;
+    close(fd);
+    if (ret != 0) {
+        APPSPAWN_LOGE("Cannot set kernel userId %{public}u: %{public}s", userId, strerror(savedErrno));
+    }
+    errno = savedErrno;
+    return ret;
 }
 
 static int SetProcessName(const AppSpawnMgr *content, const AppSpawningCtx *property)
@@ -346,18 +364,19 @@ APPSPAWN_STATIC int SetUidGid(const AppSpawnMgr *content, const AppSpawningCtx *
     FinishAppspawnTrace();
     APPSPAWN_CHECK(ret == 0, return ret, "Failed to set setSeccompFilter");
 
+    // Store the kernel account identity while this child still has root.
+    char *userIdStr = (char *)GetAppSpawnMsgExtInfo(property->message, MSG_EXT_NAME_USERID, NULL);
+    if (userIdStr != NULL) {
+        APPSPAWN_LOGV("Set userId to %{public}s for process %{public}s", userIdStr, GetProcessName(property));
+        ret = SetUserId(userIdStr);
+        APPSPAWN_CHECK(ret == 0, return ret, "SetUserId(%{public}s) failed", userIdStr);
+    }
+
     /* If the effective user ID is changed from 0 to nonzero,
      * then all capabilities are cleared from the effective set
      */
     ret = setresuid(dacInfo->uid, dacInfo->uid, dacInfo->uid);
     APPSPAWN_CHECK(ret == 0, return errno, "setuid(%{public}u) failed: %{public}d", dacInfo->uid, errno);
-
-    char *userIdStr = (char *)GetAppSpawnMsgExtInfo(property->message, MSG_EXT_NAME_USERID, NULL);
-    if (userIdStr != NULL) {
-        APPSPAWN_LOGV("Set userId to %{public}s for process %{public}s", userIdStr, GetProcessName(property));
-        ret = SetUserId(userIdStr);
-        APPSPAWN_CHECK_ONLY_LOGW(ret == 0, "SetUserId(%{public}s) failed", userIdStr);
-    }
 
     /* The setenv operation should be performed after the final SetProcessName. This is because the HiLog module
      * uses the HAP_DEBUGGABLE env as the basis for determining whether the application process name has been set.

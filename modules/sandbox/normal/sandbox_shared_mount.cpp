@@ -551,7 +551,7 @@ int MountToShared(AppSpawnMgr *content, const AppSpawningCtx *property)
 #ifndef APPSPAWN_SANDBOX_NEW
 APPSPAWN_STATIC int AppCleanupHook(const AppSpawnMgr *content, const AppSpawnedProcessInfo *appInfo)
 {
-    APPSPAWN_ONLY_EXPER(appInfo == nullptr || IsNWebSpawnMode(content),
+    APPSPAWN_ONLY_EXPER(appInfo == nullptr || IsNWebSpawnMode(content) || IsNativeSpawnMode(content),
         return 0);
 
     // Only process when uid > 0 and device is locked
